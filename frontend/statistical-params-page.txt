@@ -1,0 +1,794 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box, Grid, Paper, Typography, Card, CardContent, CardHeader,
+  Divider, Button, TextField, Slider, FormControlLabel, Switch,
+  Select, MenuItem, FormControl, InputLabel, InputAdornment, 
+  Alert, Tooltip, IconButton, Accordion, AccordionSummary, 
+  AccordionDetails, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow
+} from '@mui/material';
+import {
+  Save as SaveIcon,
+  Refresh as RefreshIcon,
+  ExpandMore as ExpandMoreIcon,
+  Info as InfoIcon,
+  Timeline as TimelineIcon,
+  AccessTime as AccessTimeIcon,
+  CalendarMonth as CalendarIcon,
+  Speed as SpeedIcon,
+  RepeatOne as RepeatOneIcon
+} from '@mui/icons-material';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { styled } from '@mui/material/styles';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+
+// Register ChartJS components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  ChartTooltip,
+  Legend,
+  Filler
+);
+
+// Mock API service
+import { mockStatParams, mockSaveStatParams } from '../../services/mockApi';
+
+// Styled components for time slots
+const TimeSlot = styled(Box)(({ theme, active }) => ({
+  backgroundColor: active ? theme.palette.primary.light : theme.palette.grey[100],
+  borderRadius: theme.shape.borderRadius,
+  padding: theme.spacing(1),
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+  '&:hover': {
+    backgroundColor: active ? theme.palette.primary.main : theme.palette.grey[200],
+    transform: 'translateY(-2px)',
+  },
+}));
+
+// Day names
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Format seconds as MM:SS
+const formatSeconds = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+};
+
+// Format time (Date object) as HH:MM
+const formatTime = (time) => {
+  if (!time) return '';
+  const hours = time.getHours();
+  const minutes = time.getMinutes();
+  return `${hours < 10 ? '0' : ''}${hours}:${minutes < 10 ? '0' : ''}${minutes}`;
+};
+
+function StatisticalParamsPage() {
+  // State for loading and saving
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  
+  // State for ACD (Average Call Duration)
+  const [acdMin, setAcdMin] = useState(180); // 3 minutes in seconds
+  const [acdMax, setAcdMax] = useState(480); // 8 minutes in seconds
+  
+  // State for ASR (Answered Call Rate)
+  const [asr, setAsr] = useState(50); // 50%
+  
+  // State for time and days scheduling
+  const [weekdayStart, setWeekdayStart] = useState(new Date(0, 0, 0, 8, 0)); // 8:00 AM
+  const [weekdayEnd, setWeekdayEnd] = useState(new Date(0, 0, 0, 18, 0)); // 6:00 PM
+  const [weekendStart, setWeekendStart] = useState(new Date(0, 0, 0, 9, 0)); // 9:00 AM
+  const [weekendEnd, setWeekendEnd] = useState(new Date(0, 0, 0, 14, 0)); // 2:00 PM
+  const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]); // All days selected by default
+  
+  // State for rate of increase and decrease
+  const [increaseRate, setIncreaseRate] = useState(5); // 5 channels per minute
+  const [decreaseRate, setDecreaseRate] = useState(3); // 3 channels per minute
+  
+  // State for number of simultaneous calls
+  const [minCalls, setMinCalls] = useState(0);
+  const [maxCalls, setMaxCalls] = useState(500);
+  
+  // State for daily pattern
+  const [dailyPattern, setDailyPattern] = useState([
+    { hour: 0, factor: 0.1 },
+    { hour: 1, factor: 0.05 },
+    { hour: 2, factor: 0.05 },
+    { hour: 3, factor: 0.05 },
+    { hour: 4, factor: 0.1 },
+    { hour: 5, factor: 0.2 },
+    { hour: 6, factor: 0.3 },
+    { hour: 7, factor: 0.4 },
+    { hour: 8, factor: 0.5 },
+    { hour: 9, factor: 0.7 },
+    { hour: 10, factor: 0.8 },
+    { hour: 11, factor: 0.9 },
+    { hour: 12, factor: 1.0 },
+    { hour: 13, factor: 0.9 },
+    { hour: 14, factor: 0.85 },
+    { hour: 15, factor: 0.8 },
+    { hour: 16, factor: 0.85 },
+    { hour: 17, factor: 0.9 },
+    { hour: 18, factor: 0.8 },
+    { hour: 19, factor: 0.7 },
+    { hour: 20, factor: 0.5 },
+    { hour: 21, factor: 0.4 },
+    { hour: 22, factor: 0.3 },
+    { hour: 23, factor: 0.2 },
+  ]);
+  
+  // Load initial data
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // In a real app, this would be an API call
+        // const response = await api.getStatisticalParams();
+        
+        // Using mock data for now
+        const response = await mockStatParams();
+        
+        // Set state values from response
+        setAcdMin(response.acdMin);
+        setAcdMax(response.acdMax);
+        setAsr(response.asr);
+        setWeekdayStart(new Date(response.weekdayStart));
+        setWeekdayEnd(new Date(response.weekdayEnd));
+        setWeekendStart(new Date(response.weekendStart));
+        setWeekendEnd(new Date(response.weekendEnd));
+        setSelectedDays(response.selectedDays);
+        setIncreaseRate(response.increaseRate);
+        setDecreaseRate(response.decreaseRate);
+        setMinCalls(response.minCalls);
+        setMaxCalls(response.maxCalls);
+        setDailyPattern(response.dailyPattern);
+      } catch (error) {
+        console.error('Error fetching statistical parameters:', error);
+        // Would show an error notification in a real app
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Handle save parameters
+  const handleSaveParams = async () => {
+    setSaving(true);
+    setSaveSuccess(false);
+    setSaveError('');
+    
+    try {
+      // In a real app, this would be an API call
+      // await api.saveStatisticalParams({
+      //   acdMin, acdMax, asr, weekdayStart, weekdayEnd, weekendStart, weekendEnd,
+      //   selectedDays, increaseRate, decreaseRate, minCalls, maxCalls, dailyPattern
+      // });
+      
+      // Using mock function for now
+      await mockSaveStatParams({
+        acdMin, acdMax, asr, weekdayStart, weekdayEnd, weekendStart, weekendEnd,
+        selectedDays, increaseRate, decreaseRate, minCalls, maxCalls, dailyPattern
+      });
+      
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error('Error saving statistical parameters:', error);
+      setSaveError('Failed to save parameters. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Handle day selection toggle
+  const handleDayToggle = (day) => {
+    if (selectedDays.includes(day)) {
+      setSelectedDays(selectedDays.filter(d => d !== day));
+    } else {
+      setSelectedDays([...selectedDays, day].sort());
+    }
+  };
+
+  // Handle daily pattern update
+  const handlePatternChange = (hour, newFactor) => {
+    const newPattern = [...dailyPattern];
+    const index = newPattern.findIndex(item => item.hour === hour);
+    if (index !== -1) {
+      newPattern[index] = { hour, factor: parseFloat(newFactor) };
+      setDailyPattern(newPattern);
+    }
+  };
+
+  // Prepare daily pattern chart data
+  const patternChartData = {
+    labels: dailyPattern.map(item => `${item.hour}:00`),
+    datasets: [
+      {
+        label: 'Call Volume Factor',
+        data: dailyPattern.map(item => item.factor * maxCalls),
+        borderColor: 'rgba(75, 192, 192, 1)',
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        fill: true,
+        tension: 0.4,
+      }
+    ],
+  };
+
+  // Chart options for pattern chart
+  const patternChartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: 'Expected Call Volume by Hour',
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return `${Math.round(context.raw)} calls`;
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Number of Calls'
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Hour of Day'
+        }
+      }
+    },
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+        <Typography>Loading parameters...</Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      {/* Page Header */}
+      <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={6}>
+            <Typography variant="h5" component="h1" gutterBottom>
+              Statistical Parameters Configuration
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Configure the call generation parameters to simulate realistic call patterns
+            </Typography>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveParams}
+                disabled={saving}
+              >
+                {saving ? 'Saving...' : 'Save Parameters'}
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<RefreshIcon />}
+              >
+                Reset to Defaults
+              </Button>
+            </Box>
+          </Grid>
+        </Grid>
+
+        {saveSuccess && (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            Parameters saved successfully.
+          </Alert>
+        )}
+
+        {saveError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {saveError}
+          </Alert>
+        )}
+      </Paper>
+
+      <Grid container spacing={3}>
+        {/* ACD (Average Call Duration) */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardHeader 
+              title="ACD (Average Call Duration)" 
+              avatar={<AccessTimeIcon color="primary" />}
+              action={
+                <Tooltip title="The average duration of calls that will be generated. A range is defined to create variation between calls.">
+                  <IconButton>
+                    <InfoIcon />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <Divider />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Set the minimum and maximum duration for generated calls in seconds
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Minimum Duration"
+                    type="number"
+                    value={acdMin}
+                    onChange={(e) => setAcdMin(parseInt(e.target.value))}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">sec</InputAdornment>,
+                    }}
+                    fullWidth
+                    helperText={`${Math.floor(acdMin / 60)}:${acdMin % 60 < 10 ? '0' : ''}${acdMin % 60} (MM:SS)`}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Maximum Duration"
+                    type="number"
+                    value={acdMax}
+                    onChange={(e) => setAcdMax(parseInt(e.target.value))}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">sec</InputAdornment>,
+                    }}
+                    fullWidth
+                    helperText={`${Math.floor(acdMax / 60)}:${acdMax % 60 < 10 ? '0' : ''}${acdMax % 60} (MM:SS)`}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Box sx={{ px: 2 }}>
+                    <Slider
+                      getAriaLabel={() => 'Call duration range'}
+                      value={[acdMin, acdMax]}
+                      onChange={(e, newValue) => {
+                        setAcdMin(newValue[0]);
+                        setAcdMax(newValue[1]);
+                      }}
+                      valueLabelDisplay="auto"
+                      min={30} // 30 seconds minimum
+                      max={1800} // 30 minutes maximum
+                      marks={[
+                        { value: 60, label: '1m' },
+                        { value: 300, label: '5m' },
+                        { value: 600, label: '10m' },
+                        { value: 1200, label: '20m' },
+                        { value: 1800, label: '30m' }
+                      ]}
+                      valueLabelFormat={formatSeconds}
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* ASR (Answered Call Rate) */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardHeader 
+              title="ASR (Answered Call Rate)" 
+              avatar={<RepeatOneIcon color="primary" />}
+              action={
+                <Tooltip title="The percentage of calls that will be answered by the destination server. This simulates real-world behavior where not all calls are answered.">
+                  <IconButton>
+                    <InfoIcon />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <Divider />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Set the percentage of calls that will be answered
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    label="Answer Rate"
+                    type="number"
+                    value={asr}
+                    onChange={(e) => setAsr(parseInt(e.target.value))}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                    }}
+                    fullWidth
+                    helperText={`${asr}% of calls will be answered, ${100 - asr}% will be rejected`}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Box sx={{ px: 2 }}>
+                    <Slider
+                      getAriaLabel={() => 'Answered call rate'}
+                      value={asr}
+                      onChange={(e, newValue) => setAsr(newValue)}
+                      valueLabelDisplay="auto"
+                      min={0}
+                      max={100}
+                      marks={[
+                        { value: 0, label: '0%' },
+                        { value: 25, label: '25%' },
+                        { value: 50, label: '50%' },
+                        { value: 75, label: '75%' },
+                        { value: 100, label: '100%' }
+                      ]}
+                      valueLabelFormat={(value) => `${value}%`}
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Time and Days Scheduling */}
+        <Grid item xs={12}>
+          <Card>
+            <CardHeader 
+              title="Time and Days Scheduling" 
+              avatar={<CalendarIcon color="primary" />}
+              action={
+                <Tooltip title="Configure when calls will be generated. Different schedules can be set for weekdays and weekends.">
+                  <IconButton>
+                    <InfoIcon />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <Divider />
+            <CardContent>
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <Grid container spacing={3}>
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Active Days
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
+                      {DAYS.map((day, index) => (
+                        <TimeSlot 
+                          key={day} 
+                          active={selectedDays.includes(index)}
+                          onClick={() => handleDayToggle(index)}
+                        >
+                          <Typography variant="body2">
+                            {day}
+                          </Typography>
+                        </TimeSlot>
+                      ))}
+                    </Box>
+                  </Grid>
+
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Weekday Schedule (Mon-Fri)
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <TimePicker
+                          label="Start Time"
+                          value={weekdayStart}
+                          onChange={setWeekdayStart}
+                          renderInput={(params) => <TextField {...params} fullWidth />}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TimePicker
+                          label="End Time"
+                          value={weekdayEnd}
+                          onChange={setWeekdayEnd}
+                          renderInput={(params) => <TextField {...params} fullWidth />}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Grid>
+
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Weekend Schedule (Sat-Sun)
+                    </Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <TimePicker
+                          label="Start Time"
+                          value={weekendStart}
+                          onChange={setWeekendStart}
+                          renderInput={(params) => <TextField {...params} fullWidth />}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TimePicker
+                          label="End Time"
+                          value={weekendEnd}
+                          onChange={setWeekendEnd}
+                          renderInput={(params) => <TextField {...params} fullWidth />}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Grid>
+                </Grid>
+              </LocalizationProvider>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Rate of Increase and Decrease */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardHeader 
+              title="Rate of Increase and Decrease" 
+              avatar={<SpeedIcon color="primary" />}
+              action={
+                <Tooltip title="Control how quickly the number of active calls will increase or decrease over time. Higher values mean faster changes in call volume.">
+                  <IconButton>
+                    <InfoIcon />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <Divider />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Set how quickly the system adds or removes active calls (channels per minute)
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Increase Rate"
+                    type="number"
+                    value={increaseRate}
+                    onChange={(e) => setIncreaseRate(parseInt(e.target.value))}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">ch/min</InputAdornment>,
+                    }}
+                    fullWidth
+                    helperText="Channels added per minute when ramping up"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Decrease Rate"
+                    type="number"
+                    value={decreaseRate}
+                    onChange={(e) => setDecreaseRate(parseInt(e.target.value))}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">ch/min</InputAdornment>,
+                    }}
+                    fullWidth
+                    helperText="Channels removed per minute when ramping down"
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    Higher values create steeper slopes in call traffic. For more organic-looking patterns, use lower values.
+                  </Alert>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Number of Simultaneous Calls */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardHeader 
+              title="Number of Simultaneous Calls" 
+              avatar={<TimelineIcon color="primary" />}
+              action={
+                <Tooltip title="Define the minimum and maximum number of calls that can be active at the same time. The actual number will vary between these limits following the daily pattern.">
+                  <IconButton>
+                    <InfoIcon />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <Divider />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Set the minimum and maximum number of simultaneous calls
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Minimum Calls"
+                    type="number"
+                    value={minCalls}
+                    onChange={(e) => setMinCalls(parseInt(e.target.value))}
+                    fullWidth
+                    helperText="Minimum number of active calls at any time"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    label="Maximum Calls"
+                    type="number"
+                    value={maxCalls}
+                    onChange={(e) => setMaxCalls(parseInt(e.target.value))}
+                    fullWidth
+                    helperText="Maximum number of active calls at peak times"
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Box sx={{ px: 2 }}>
+                    <Slider
+                      getAriaLabel={() => 'Simultaneous calls range'}
+                      value={[minCalls, maxCalls]}
+                      onChange={(e, newValue) => {
+                        setMinCalls(newValue[0]);
+                        setMaxCalls(newValue[1]);
+                      }}
+                      valueLabelDisplay="auto"
+                      min={0}
+                      max={1000}
+                      marks={[
+                        { value: 0, label: '0' },
+                        { value: 250, label: '250' },
+                        { value: 500, label: '500' },
+                        { value: 750, label: '750' },
+                        { value: 1000, label: '1000' }
+                      ]}
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Daily Pattern Configuration */}
+        <Grid item xs={12}>
+          <Accordion defaultExpanded>
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              aria-controls="daily-pattern-content"
+              id="daily-pattern-header"
+            >
+              <Typography variant="h6">Daily Call Volume Pattern</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={5}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Configure the hourly call volume factors (0.0 - 1.0). These factors determine the percentage of maximum calls that will be active during each hour of the day.
+                  </Typography>
+                  
+                  <TableContainer component={Paper} variant="outlined" sx={{ mt: 2, maxHeight: 400, overflow: 'auto' }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Hour</TableCell>
+                          <TableCell>Factor (0.0 - 1.0)</TableCell>
+                          <TableCell>Approx. Calls</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {dailyPattern.map((item) => (
+                          <TableRow key={item.hour}>
+                            <TableCell>{`${item.hour}:00 - ${item.hour + 1}:00`}</TableCell>
+                            <TableCell>
+                              <TextField
+                                type="number"
+                                value={item.factor}
+                                onChange={(e) => handlePatternChange(item.hour, e.target.value)}
+                                inputProps={{ 
+                                  step: 0.05,
+                                  min: 0,
+                                  max: 1
+                                }}
+                                size="small"
+                                sx={{ width: 80 }}
+                              />
+                            </TableCell>
+                            <TableCell>{Math.round(item.factor * maxCalls)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  
+                  <Box sx={{ mt: 2 }}>
+                    <Button 
+                      variant="outlined" 
+                      color="primary"
+                      onClick={() => {
+                        // Reset to natural pattern
+                        setDailyPattern([
+                          { hour: 0, factor: 0.1 },
+                          { hour: 1, factor: 0.05 },
+                          { hour: 2, factor: 0.05 },
+                          { hour: 3, factor: 0.05 },
+                          { hour: 4, factor: 0.1 },
+                          { hour: 5, factor: 0.2 },
+                          { hour: 6, factor: 0.3 },
+                          { hour: 7, factor: 0.4 },
+                          { hour: 8, factor: 0.5 },
+                          { hour: 9, factor: 0.7 },
+                          { hour: 10, factor: 0.8 },
+                          { hour: 11, factor: 0.9 },
+                          { hour: 12, factor: 1.0 },
+                          { hour: 13, factor: 0.9 },
+                          { hour: 14, factor: 0.85 },
+                          { hour: 15, factor: 0.8 },
+                          { hour: 16, factor: 0.85 },
+                          { hour: 17, factor: 0.9 },
+                          { hour: 18, factor: 0.8 },
+                          { hour: 19, factor: 0.7 },
+                          { hour: 20, factor: 0.5 },
+                          { hour: 21, factor: 0.4 },
+                          { hour: 22, factor: 0.3 },
+                          { hour: 23, factor: 0.2 },
+                        ]);
+                      }}
+                    >
+                      Reset to Natural Pattern
+                    </Button>
+                  </Box>
+                </Grid>
+                
+                <Grid item xs={12} md={7}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Visualized Daily Call Pattern
+                  </Typography>
+                  <Box sx={{ height: 400 }}>
+                    <Line data={patternChartData} options={patternChartOptions} />
+                  </Box>
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    This graph shows the expected number of active calls throughout the day based on your configuration. For more organic traffic, aim for natural rises and falls rather than sharp changes.
+                  </Alert>
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+}
+
+export default StatisticalParamsPage;
